@@ -368,6 +368,7 @@ func _refresh_hud() -> void:
 	else:
 		status = "准备中 %ds" % maxi(0, int(prep_timer))
 	ui.update_hud(gold, core_hp, wave_index, C.WAVES.size(), status)
+	world.set_core_health_ratio(float(core_hp) / float(C.CORE_HP))
 
 func _show_toast(text: String) -> void:
 	ui.lbl_status.text = text

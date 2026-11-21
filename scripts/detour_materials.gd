@@ -10,6 +10,8 @@ class_name DetourMaterials
 static var _tex_cache: Dictionary = {}
 static var _mat_cache: Dictionary = {}
 static var _hazard_tex: ImageTexture = null
+static var _crack_tex: ImageTexture = null
+static var _cobble_tex: ImageTexture = null
 
 # 灰度噪声纹理（输出 0..1 的亮度，用于 albedo tint 与 bump）
 static func noise_tex(key: String, seed_val: int, freq: float,
@@ -50,6 +52,68 @@ static func hazard_tex() -> ImageTexture:
 	_hazard_tex = ImageTexture.create_from_image(img)
 	return _hazard_tex
 
+# 石砖纹理：深灰砖面 + 砖缝 + 随机磨损，用于地面
+static func cobble_tex() -> ImageTexture:
+	if _cobble_tex:
+		return _cobble_tex
+	var s := 128
+	var img := Image.create(s, s, false, Image.FORMAT_RGBA8)
+	var cell := 32
+	for y in range(s):
+		for x in range(s):
+			var cx := x / cell
+			var cy := y / cell
+			# 交错砖缝
+			var offset := (cy % 2) * (cell / 2)
+			var lx := (x + offset) % cell
+			var ly := y % cell
+			var mortar := lx < 3 or ly < 3
+			var v := 0.0
+			if mortar:
+				v = 0.30 + sin(x * 0.7 + y * 0.3) * 0.04
+			else:
+				var brick_id := cx * 7 + cy * 13
+				var shade := 0.52 + fmod(float(brick_id * 37 % 17), 9.0) / 40.0
+				var grain := sin(x * 1.7 + brick_id) * cos(y * 1.3 - brick_id) * 0.06
+				var wear := sin(float(x) * 0.11 + float(y) * 0.09) * 0.05
+				v = shade + grain + wear
+				# 砖面边缘暗一点，模拟倒角
+				if lx < 6 or ly < 6 or lx > cell - 5 or ly > cell - 5:
+					v -= 0.08
+			v = clampf(v, 0.18, 0.95)
+			img.set_pixel(x, y, Color(v, v * 0.98, v * 0.93, 1.0))
+	_cobble_tex = ImageTexture.create_from_image(img)
+	return _cobble_tex
+
+# 裂纹细节纹理：深色底 + 不规则亮裂线，用作叠加细节
+static func crack_tex() -> ImageTexture:
+	if _crack_tex:
+		return _crack_tex
+	var s := 128
+	var img := Image.create(s, s, false, Image.FORMAT_RGBA8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 90210
+	# 先填深底
+	for y in range(s):
+		for x in range(s):
+			img.set_pixel(x, y, Color(0.10, 0.10, 0.10, 1.0))
+	# 画若干分叉裂纹
+	for c in range(5):
+		var x := rng.randi_range(10, s - 10)
+		var y := rng.randi_range(10, s - 10)
+		var ang := rng.randf_range(0.0, TAU)
+		for step in range(26):
+			ang += rng.randf_range(-0.5, 0.5)
+			x += int(cos(ang) * 2.0)
+			y += int(sin(ang) * 2.0)
+			if x < 0 or y < 0 or x >= s or y >= s:
+				break
+			img.set_pixel(x, y, Color(0.75, 0.72, 0.66, 1.0))
+			if x + 1 < s:
+				img.set_pixel(x + 1, y, Color(0.42, 0.40, 0.36, 1.0))
+	_crack_tex = ImageTexture.create_from_image(img)
+	return _crack_tex
+
 # 主材质工厂
 static func mat(preset: String, tint: Color = Color.WHITE, emission: float = 0.0) -> StandardMaterial3D:
 	var key := "%s|%s|%.2f" % [preset, tint.to_html(), emission]
@@ -63,6 +127,16 @@ static func mat(preset: String, tint: Color = Color.WHITE, emission: float = 0.0
 	m.uv1_triplanar_sharpness = 0.5
 
 	match preset:
+		"cobble":
+			m.albedo_texture = cobble_tex()
+			m.uv1_triplanar = false
+			m.roughness_texture = noise_tex("ground_b", 21, 0.9, 0.3, 1.0)
+			m.roughness = 0.96
+		"cracked":
+			m.albedo_texture = crack_tex()
+			m.uv1_triplanar = false
+			m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			m.roughness = 0.98
 		"ground":
 			m.albedo_texture = noise_tex("ground", 21, 0.42, 0.52, 1.0)
 			m.roughness_texture = noise_tex("ground_b", 21, 0.9, 0.3, 1.0)

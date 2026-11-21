@@ -8,13 +8,13 @@ class_name DetourProps
 
 const VF = preload("res://scripts/voxel_factory.gd")
 
-const IVORY := Color(0.82, 0.79, 0.69)
-const SAND := Color(0.70, 0.66, 0.55)
-const STONE := Color(0.53, 0.51, 0.46)
-const DARK := Color(0.16, 0.17, 0.18)
-const METAL := Color(0.37, 0.39, 0.41)
-const STL := Color(0.55, 0.57, 0.58)
-const RUST := Color(0.66, 0.29, 0.12)
+const IVORY := Color(0.54, 0.53, 0.48)   # 深灰石（原暖白改深）
+const SAND := Color(0.46, 0.43, 0.37)    # 深褐砂岩
+const STONE := Color(0.40, 0.39, 0.36)   # 深灰石材
+const DARK := Color(0.14, 0.15, 0.16)
+const METAL := Color(0.32, 0.34, 0.36)
+const STL := Color(0.46, 0.48, 0.49)
+const RUST := Color(0.62, 0.27, 0.10)
 const ORANGE := Color(0.96, 0.48, 0.10)
 const YELLOW := Color(0.98, 0.74, 0.14)
 const CYAN := Color(0.17, 0.86, 0.96)
@@ -267,6 +267,78 @@ static func build_tree(scale: float = 1.0) -> Node3D:
 		VF.pbox(root, "CrownTip%d" % i, Vector3(sz * 0.58, sz * 0.42, sz * 0.58),
 			pos + Vector3(0.08, sz * 0.42, -0.05), "foliage",
 			LEAF_B if i % 2 == 0 else LEAF_C)
+	return root
+
+# 金黄秋树（明亮的黄冠）
+static func build_tree_gold(scale: float = 1.0) -> Node3D:
+	var root := Node3D.new()
+	root.name = "AutumnTreeGold"
+	root.scale = Vector3.ONE * scale
+	var g1 := Color(0.98, 0.78, 0.16)
+	var g2 := Color(1.0, 0.88, 0.30)
+	var g3 := Color(0.86, 0.58, 0.12)
+	VF.pbox(root, "Trunk", Vector3(0.17, 0.88, 0.17), Vector3(0, 0.44, 0), "wood", WOOD)
+	VF.pbox(root, "BranchL", Vector3(0.09, 0.40, 0.09), Vector3(-0.20, 0.98, 0), "wood", WOOD).rotation.z = 0.55
+	VF.pbox(root, "BranchR", Vector3(0.09, 0.38, 0.09), Vector3(0.19, 1.00, 0.05), "wood", WOOD).rotation.z = -0.58
+	var clusters := [
+		[Vector3(0, 1.34, 0), 0.66, g1], [Vector3(-0.32, 1.16, 0.08), 0.50, g2],
+		[Vector3(0.33, 1.22, -0.10), 0.52, g1], [Vector3(0.08, 1.60, 0.14), 0.44, g2],
+		[Vector3(-0.18, 1.52, -0.22), 0.42, g3], [Vector3(0.28, 1.46, 0.24), 0.40, g1],
+	]
+	for i in range(clusters.size()):
+		var c: Array = clusters[i]
+		var pos: Vector3 = c[0]
+		var sz := float(c[1])
+		var col: Color = c[2]
+		VF.pbox(root, "Crown%d" % i, Vector3(sz, sz * 0.72, sz * 0.92), pos, "foliage", col).rotation.y = float(i) * 0.7
+		VF.pbox(root, "CrownTip%d" % i, Vector3(sz * 0.58, sz * 0.42, sz * 0.58),
+			pos + Vector3(0.08, sz * 0.42, -0.05), "foliage", g2 if i % 2 == 0 else g3)
+	return root
+
+# 橙红秋树（深红橙冠）
+static func build_tree_red(scale: float = 1.0) -> Node3D:
+	var root := Node3D.new()
+	root.name = "AutumnTreeRed"
+	root.scale = Vector3.ONE * scale
+	var r1 := Color(0.86, 0.30, 0.08)
+	var r2 := Color(0.96, 0.46, 0.10)
+	var r3 := Color(0.68, 0.18, 0.06)
+	VF.pbox(root, "Trunk", Vector3(0.18, 0.94, 0.18), Vector3(0, 0.47, 0), "wood", WOOD)
+	VF.pbox(root, "BranchL", Vector3(0.10, 0.42, 0.10), Vector3(-0.21, 1.02, 0), "wood", WOOD).rotation.z = 0.60
+	VF.pbox(root, "BranchR", Vector3(0.10, 0.40, 0.10), Vector3(0.20, 1.06, 0.06), "wood", WOOD).rotation.z = -0.55
+	var clusters := [
+		[Vector3(0, 1.40, 0), 0.68, r2], [Vector3(-0.34, 1.20, 0.10), 0.52, r1],
+		[Vector3(0.34, 1.26, -0.10), 0.54, r2], [Vector3(0.10, 1.66, 0.14), 0.46, r3],
+		[Vector3(-0.16, 1.58, -0.24), 0.44, r1], [Vector3(0.30, 1.52, 0.26), 0.42, r2],
+	]
+	for i in range(clusters.size()):
+		var c: Array = clusters[i]
+		var pos: Vector3 = c[0]
+		var sz := float(c[1])
+		var col: Color = c[2]
+		VF.pbox(root, "Crown%d" % i, Vector3(sz, sz * 0.74, sz * 0.90), pos, "foliage", col).rotation.y = float(i) * 0.8
+		VF.pbox(root, "CrownTip%d" % i, Vector3(sz * 0.56, sz * 0.40, sz * 0.56),
+			pos + Vector3(-0.06, sz * 0.44, 0.04), "foliage", r1 if i % 2 == 0 else r3)
+	return root
+
+# 机械残骸（倾倒的机架 + 断裂齿轮 + 锈管）
+static func build_wreckage(seed_v: int = 0) -> Node3D:
+	var root := Node3D.new()
+	root.name = "Wreckage"
+	VF.pbox(root, "Slab", Vector3(0.86, 0.14, 0.62), Vector3(0, 0.07, 0), "rust", RUST).rotation.y = float(seed_v) * 0.5
+	var frame := VF.pbox(root, "Frame", Vector3(0.62, 0.40, 0.12), Vector3(0.06, 0.32, 0.08), "darkmetal")
+	frame.rotation.z = 0.42
+	frame.rotation.y = 0.3
+	var gear := VF.pcyl(root, "Gear", 0.26, 0.07, Vector3(-0.26, 0.12, -0.14), "rust", RUST, 0.0, 9)
+	gear.rotation.x = PI * 0.48
+	gear.rotation.z = 0.3
+	for i in range(7):
+		var a := TAU * float(i) / 7.0
+		VF.pbox(root, "Tooth", Vector3(0.10, 0.06, 0.09),
+			Vector3(-0.26 + cos(a) * 0.28, 0.12, -0.14 + sin(a) * 0.28), "rust", RUST).rotation.y = -a
+	var tube := VF.pcyl(root, "Tube", 0.09, 0.72, Vector3(0.22, 0.22, -0.20), "metal", METAL, 0.0, 8)
+	tube.rotation.z = PI * 0.42
+	VF.pbox(root, "Debris1", Vector3(0.18, 0.12, 0.16), Vector3(0.38, 0.06, 0.24), "stone", STONE)
 	return root
 
 static func build_shrub(seed_v: int = 0) -> Node3D:

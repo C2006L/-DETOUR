@@ -23,6 +23,15 @@ const CYAN := Color(0.17, 0.86, 0.96)
 const CDARK := Color(0.05, 0.34, 0.44)
 const RED := Color(0.90, 0.16, 0.12)
 
+# 视觉等比放大：只作用于模型的直接子节点，不动根节点 scale
+# （逻辑层 upgrade() 会覆盖 model.scale，故放大必须下沉一层）
+static func _inflate(root: Node3D, factor: float) -> void:
+	for child in root.get_children():
+		if child is Node3D:
+			var n := child as Node3D
+			n.scale *= factor
+			n.position *= factor
+
 # ============================================================
 #  T1 机枪塔 — 双枪管 / 橙黄装甲 / 青蓝传感器
 # ============================================================
@@ -73,6 +82,21 @@ static func build_minigun() -> Node3D:
 	# 青蓝传感器 + 天线
 	VF.pbox(head, "Sensor", Vector3(0.13, 0.09, 0.09), Vector3(0, 0.14, -0.20), "glass", CYAN, 2.6)
 	VF.pbox(head, "Antenna", Vector3(0.035, 0.26, 0.035), Vector3(0.14, 0.32, 0.08), "metal", STL)
+	# V0.3 精修：旋转底座齿圈 + 装甲铆钉 + 枪管护罩
+	VF.pcyl(root, "BaseGear", 0.52, 0.05, Vector3(0, 0.17, 0), "darkmetal", Color.WHITE, 0.0, 12)
+	for i in range(12):
+		var a := TAU * float(i) / 12.0
+		VF.pbox(root, "GearTooth", Vector3(0.08, 0.06, 0.10),
+			Vector3(cos(a) * 0.52, 0.17, sin(a) * 0.52), "metal", STL).rotation.y = -a
+	for i in range(4):
+		var a2 := TAU * float(i) / 4.0 + PI * 0.25
+		VF.pcyl(head, "Rivet", 0.035, 0.03,
+			Vector3(cos(a2) * 0.18, 0.24, sin(a2) * 0.16), "darkmetal", Color.WHITE, 0.0, 6)
+	for side in [-1.0, 1.0]:
+		var sx: float = 0.13 * float(side)
+		VF.pbox(head, "BarrelShroud", Vector3(0.20, 0.14, 0.30),
+			Vector3(sx, 0.09, -0.30), "paint", ORANGE)
+	_inflate(root, 1.2)  # V0.3：整体放大 20%（不覆盖根节点 scale）
 	return root
 
 # ============================================================
@@ -118,6 +142,24 @@ static func build_cannon() -> Node3D:
 	# 传感器 + 弹药箱
 	VF.pbox(head, "Sensor", Vector3(0.12, 0.10, 0.10), Vector3(0, 0.30, -0.26), "glass", RED, 2.4)
 	VF.pbox(head, "AmmoBox", Vector3(0.30, 0.20, 0.30), Vector3(0, 0.10, 0.34), "metal", DARK)
+	# V0.3 精修：后坐缓冲筒（炮管两侧）+ 炮口制退器开槽 + 底座齿圈 + 侧履带板
+	for sx in [-1.0, 1.0]:
+		var recoil := VF.pcyl(head, "Recoil%d" % int(sx), 0.07, 0.42,
+			Vector3(sx * 0.22, 0.12, -0.52), "darkmetal", Color.WHITE, 0.0, 8)
+		recoil.rotation.x = PI * 0.5
+		for k in range(3):
+			VF.pbox(head, "MuzzleSlot", Vector3(0.05, 0.06, 0.14),
+				Vector3(sx * 0.08, 0.13 + float(k) * 0.06, -1.30), "darkmetal")
+	VF.pcyl(root, "BaseGear", 0.62, 0.05, Vector3(0, 0.21, 0), "darkmetal", Color.WHITE, 0.0, 12)
+	for i in range(12):
+		var a := TAU * float(i) / 12.0
+		VF.pbox(root, "GearTooth", Vector3(0.10, 0.06, 0.11),
+			Vector3(cos(a) * 0.62, 0.21, sin(a) * 0.62), "metal", METAL).rotation.y = -a
+	for sx in [-1.0, 1.0]:
+		for k in range(4):
+			VF.pbox(root, "TrackPad", Vector3(0.14, 0.08, 0.20),
+				Vector3(sx * 0.58, 0.05, -0.30 + float(k) * 0.20), "darkmetal")
+	_inflate(root, 1.2)
 	return root
 
 # ============================================================
@@ -153,6 +195,19 @@ static func build_tesla() -> Node3D:
 	# 侧面能量导管
 	for sx in [-1.0, 1.0]:
 		VF.pbox(root, "Conduit", Vector3(0.06, 0.30, 0.06), Vector3(sx * 0.22, 0.70, 0), "glass", CYAN, 1.4)
+	# V0.3 精修：外层能量环 + 电弧尖刺 + 底部齿圈 + 垂直能量柱
+	_energy_ring(root, "OuterRing", 0.52, 0.90, 0.0, 14, CYAN, 1.0)
+	_energy_ring(root, "LowerHalo", 0.44, 0.50, 0.0, 12, CDARK, 1.2)
+	VF.pcyl(root, "BaseGear", 0.52, 0.05, Vector3(0, 0.19, 0), "darkmetal", Color.WHITE, 0.0, 12)
+	for i in range(8):
+		var a := TAU * float(i) / 8.0
+		VF.pcyl(root, "Spike", 0.03, 0.30,
+			Vector3(cos(a) * 0.50, 1.10, sin(a) * 0.50), "glass", CYAN, 2.2, 6)
+	for i in range(4):
+		var a3 := TAU * float(i) / 4.0
+		VF.pbox(root, "EnergyPillar", Vector3(0.05, 0.60, 0.05),
+			Vector3(cos(a3) * 0.30, 0.85, sin(a3) * 0.30), "glass", CYAN, 1.6)
+	_inflate(root, 1.2)
 	return root
 
 static func _energy_ring(parent: Node3D, name: String, radius: float,
@@ -186,6 +241,15 @@ static func build_scout() -> Node3D:
 	for i in range(3):
 		VF.pbox(root, "Fin%d" % i, Vector3(0.05, 0.14, 0.20), Vector3(-0.10 + i * 0.10, 0.62, 0.10), "darkmetal")
 	VF.pbox(root, "Antenna", Vector3(0.03, 0.20, 0.03), Vector3(0.12, 0.66, 0.16), "metal", STL)
+	# V0.3 精修：头部护罩 + 触角 + 侧面装甲板（提升等距视角辨识度）
+	VF.pbox(root, "HeadCrest", Vector3(0.32, 0.06, 0.18), Vector3(0, 0.54, -0.40), "paint", ORANGE)
+	for sx in [-1.0, 1.0]:
+		VF.pbox(root, "AntennaTip", Vector3(0.03, 0.16, 0.03),
+			Vector3(sx * 0.12, 0.56, -0.52), "metal", METAL).rotation.z = sx * 0.5
+		VF.pbox(root, "SideArmor", Vector3(0.06, 0.14, 0.30),
+			Vector3(sx * 0.24, 0.44, 0.02), "rust", RUST)
+		VF.pcyl(root, "SensorGlow", 0.05, 0.03,
+			Vector3(sx * 0.085, 0.48, -0.54), "glass", RED, 2.0, 8).rotation.x = PI * 0.5
 	# 四足：每足为上节 + 下节 + 脚爪（整组作为 LegN，逻辑改其 y 做动画）
 	var legs := [Vector3(-0.30, 0, -0.22), Vector3(0.30, 0, -0.22), Vector3(-0.30, 0, 0.22), Vector3(0.30, 0, 0.22)]
 	for i in range(4):
@@ -226,7 +290,18 @@ static func build_mech() -> Node3D:
 		VF.pbox(root, "UpperArm", Vector3(0.18, 0.42, 0.18), Vector3(sx * 0.62, 0.88, -0.06), "metal", METAL)
 		VF.pbox(root, "ForeArm", Vector3(0.22, 0.34, 0.24), Vector3(sx * 0.64, 0.56, -0.14), "darkmetal")
 		VF.pbox(root, "Vent", Vector3(0.06, 0.20, 0.30), Vector3(sx * 0.44, 1.02, -0.32), "darkmetal")
-	# 四条粗机械腿
+	# V0.3 精修：胸口核心护框 + 双层肩甲 + 背部散热栅 + 警示条
+	for sx in [-1.0, 1.0]:
+		VF.pbox(root, "CoreFrame", Vector3(0.05, 0.26, 0.10),
+			Vector3(sx * 0.13, 1.08, -0.62), "darkmetal")
+		VF.pbox(root, "ShoulderPlate", Vector3(0.32, 0.08, 0.54),
+			Vector3(sx * 0.58, 1.34, -0.04), "paint", ORANGE)
+		VF.pbox(root, "ShoulderStripe", Vector3(0.34, 0.05, 0.12),
+			Vector3(sx * 0.58, 1.40, -0.22), "hazard", Color.WHITE)
+	for i in range(4):
+		VF.pbox(root, "BackVent", Vector3(0.40, 0.05, 0.06),
+			Vector3(0, 0.90 + float(i) * 0.11, 0.60), "darkmetal")
+	# 四条粗机械腿 + 履带式脚板（节点名与结构不变，逻辑动画依赖）
 	var legs := [Vector3(-0.30, 0, -0.24), Vector3(0.30, 0, -0.24), Vector3(-0.30, 0, 0.28), Vector3(0.30, 0, 0.28)]
 	for i in range(4):
 		var p: Vector3 = legs[i]
@@ -239,6 +314,9 @@ static func build_mech() -> Node3D:
 		var shin := VF.pbox(leg, "Shin", Vector3(0.17, 0.36, 0.18), Vector3(0, -0.56, 0), "paint", RUST)
 		shin.rotation.z = 0.10 if p.x < 0.0 else -0.10
 		VF.pbox(leg, "Foot", Vector3(0.30, 0.10, 0.34), Vector3(0, -0.76, -0.04), "darkmetal")
+		for k in range(3):
+			VF.pbox(leg, "TrackPad", Vector3(0.32, 0.05, 0.09),
+				Vector3(0, -0.82, -0.12 + float(k) * 0.12), "darkmetal", Color.WHITE)
 	return root
 
 # ============================================================
@@ -286,6 +364,18 @@ static func build_core() -> Node3D:
 		particles.append({"size": Vector3(0.055, 0.055, 0.055),
 			"pos": Vector3(cos(a) * rad, yy, sin(a) * rad), "color": CYAN})
 	VF.batch(root, "EnergyParticles", particles, "glass", 3.4)
+	# V0.3 精修：外层防护罩肋架 + 顶部尖塔 + 更多能量粒子 + 生命值反馈挂点
+	for i in range(8):
+		var a := TAU * float(i) / 8.0 + PI * 0.125
+		var px := cos(a) * 1.16
+		var pz := sin(a) * 1.16
+		var strut := VF.pbox(root, "Shroud%d" % i, Vector3(0.10, 1.10, 0.10),
+			Vector3(px, 0.92, pz), "darkmetal")
+		strut.rotation.z = cos(a) * 0.14
+		strut.rotation.x = -sin(a) * 0.14
+		VF.pcyl(root, "ShroudCap%d" % i, 0.10, 0.08,
+			Vector3(px, 1.46, pz), "metal", STL, 0.0, 8)
+	VF.pcone(root, "Spire", 0.20, 0.50, Vector3(0, 2.30, 0), "glass", CYAN, 2.2, 6)
 	# 地面蓝光 + 点光
 	var disc := VF.pcyl(root, "GroundGlow", 1.42, 0.02, Vector3(0, 0.035, 0), "glass", CYAN, 1.6, 16)
 	disc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
