@@ -464,4 +464,13 @@ static func build_rubble() -> Node3D:
 	VF.pbox(root, "Chunk1", Vector3(0.26, 0.20, 0.24), Vector3(-0.44, 0.10, 0.36), "stone", STONE)
 	VF.pbox(root, "Chunk2", Vector3(0.20, 0.16, 0.20), Vector3(0.42, 0.08, 0.38), "darkmetal")
 	VF.pbox(root, "Hazard", Vector3(0.50, 0.03, 0.10), Vector3(-0.06, 0.47, 0.10), "hazard", Color.WHITE).rotation.y = 0.5
+	# 可拆警示标记：地面上方的发光菱形 + 底座警示圈，作为"可拆除"的常驻标识。
+	# 逻辑层通过节点名 Mark 做 hover 高亮（只改缩放/自发光，不改共享材质）。
+	var mark := Node3D.new()
+	mark.name = "Mark"
+	root.add_child(mark)
+	var gem := VF.pocta(mark, "Gem", 0.13, 0.19, Vector3(0, 0.80, 0), "plain", ORANGE, 1.8)
+	gem.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var ring := VF.pcyl(mark, "Ring", 0.44, 0.025, Vector3(0, 0.035, 0), "hazard", Color.WHITE, 0.35, 12)
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return root

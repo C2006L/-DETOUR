@@ -9,8 +9,11 @@ var main_ref: Node
 var is_shell: bool = false
 var mesh_node: MeshInstance3D
 var life: float = 3.0
+var _roll: float = 0.0
 
 func setup(t: DetourEnemy, spd: float, dmg: float, spl: float, ref: Node, shell: bool) -> void:
+	# 暂停时冻结子弹飞行；根节点 main 为 ALWAYS，子节点需显式声明 PAUSABLE
+	process_mode = Node.PROCESS_MODE_PAUSABLE
 	target = t
 	speed = spd
 	damage = dmg
@@ -52,12 +55,17 @@ func _physics_process(delta: float) -> void:
 		return
 	var aim := target.global_position + Vector3(0, 0.42 if target.enemy_type == "scout" else 0.85, 0)
 	var offset := aim - global_position
+	var dir := offset.normalized()
 	if offset.length() < speed * delta + 0.12:
 		impact(aim)
 		return
-	global_position += offset.normalized() * speed * delta
-	mesh_node.rotation.x += delta * 14.0
-	mesh_node.rotation.y += delta * 9.0
+	global_position += dir * speed * delta
+	# 让子弹长轴（局部 -Z）指向实际飞行方向，与炮口朝向一致；
+	# 翻滚仅作为绕飞行轴的自转，不再改变飞行朝向
+	if is_instance_valid(mesh_node):
+		mesh_node.look_at(global_position + dir, Vector3.UP)
+		_roll += delta * 14.0
+		mesh_node.rotate_object_local(Vector3.FORWARD, _roll)
 
 func impact(at: Vector3) -> void:
 	if splash > 0.0:

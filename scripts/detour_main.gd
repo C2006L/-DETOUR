@@ -24,6 +24,7 @@ var speed_scale: float = 1.0
 var _kills: int = 0
 var _elapsed: float = 0.0
 var _core_pulse: float = 0.0
+var _hover_rubble: Node3D = null
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -34,6 +35,8 @@ func _ready() -> void:
 	world = DetourWorld.new()
 	world.name = "World"
 	add_child(world)
+	# 暂停时冻结核心脉动/灯光动画：渲染照常，仅动画时间停止，恢复后无跳变
+	world.process_mode = Node.PROCESS_MODE_PAUSABLE
 	world.build(path_manager)
 
 	ui = DetourUI.new()
@@ -67,6 +70,28 @@ func _process(delta: float) -> void:
 			_finish_wave()
 
 	_refresh_hud()
+	_update_rubble_hover()
+
+# ------------------------------------------------------------
+# 悬停到可拆废墟时高亮警示标记，并在状态栏给出提示（纯视觉，不改数值）
+func _update_rubble_hover() -> void:
+	var ground := _screen_to_ground(get_viewport().get_mouse_position())
+	var hit: Node3D = null
+	if ground != Vector3.INF:
+		hit = _rubble_near(ground)
+	if hit != _hover_rubble:
+		if is_instance_valid(_hover_rubble):
+			_set_rubble_highlight(_hover_rubble, false)
+		_hover_rubble = hit
+		if is_instance_valid(hit):
+			_set_rubble_highlight(hit, true)
+	if is_instance_valid(hit):
+		ui.lbl_status.text = "可拆除废墟 · 点击 +20 金"
+
+func _set_rubble_highlight(node: Node3D, on: bool) -> void:
+	var mark := node.get_node_or_null("Mark")
+	if mark:
+		mark.scale = Vector3.ONE * (1.45 if on else 1.0)
 
 # ------------------------------------------------------------
 func _tick_spawns(delta: float) -> void:
@@ -191,6 +216,12 @@ func _tower_near(pos: Vector3) -> DetourTower:
 
 func _rubble_near(pos: Vector3) -> Node3D:
 	for r in world.rubble_nodes:
+		# 已拆除的节点会在 Tween 完成后释放，数组里可能残留失效引用；
+		# 跳过它们，避免访问 global_position 抛错中断整个输入处理链
+		if not is_instance_valid(r):
+			continue
+		if r.has_meta("clearing"):
+			continue
 		if r.global_position.distance_to(pos) < 0.70:
 			return r
 	return null
@@ -241,10 +272,14 @@ func _on_sell_requested(slot: int) -> void:
 	_refresh_hud()
 
 func _try_clear_rubble(node: Node3D) -> void:
-	var idx := int(node.get_meta("rubble_index"))
-	if node.has_meta("clearing"):
+	if not is_instance_valid(node) or node.has_meta("clearing"):
 		return
 	node.set_meta("clearing", true)
+	# 立即移出可交互列表：否则 Tween 释放节点后数组残留失效引用，
+	# 后续点击在 _rubble_near 中访问 global_position 抛错，中断整个输入链（表现为点击无响应）
+	world.rubble_nodes.erase(node)
+	if _hover_rubble == node:
+		_hover_rubble = null
 	gold += 20
 	spawn_explosion(node.global_position, false)
 	_show_toast("废墟拆除 · +20 金")

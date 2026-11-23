@@ -25,7 +25,25 @@ var _anim_time: float = 0.0
 var _flash_timer: float = 0.0
 var path_manager: PathManager
 
+# 血条专用 unshaded 材质缓存：不受场景光照影响，避免暗场景把血量压成黑色
+static var _hp_bar_mats: Dictionary = {}
+
+static func _hp_bar_mat(color: Color) -> StandardMaterial3D:
+	var key := color.to_html()
+	if _hp_bar_mats.has(key):
+		return _hp_bar_mats[key]
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = color
+	m.emission_enabled = true
+	m.emission = color
+	m.emission_energy_multiplier = 0.35
+	_hp_bar_mats[key] = m
+	return m
+
 func setup(type: String, points: Array[Vector3], manager: PathManager) -> void:
+	# 暂停时冻结移动/动画；根节点 main 为 ALWAYS，子节点需显式声明 PAUSABLE
+	process_mode = Node.PROCESS_MODE_PAUSABLE
 	enemy_type = type
 	path = points.duplicate()
 	path_manager = manager
@@ -64,14 +82,16 @@ func _build_hp_bar() -> void:
 	var bgm := BoxMesh.new()
 	bgm.size = Vector3(0.60, 0.08, 0.02)
 	bg.mesh = bgm
-	bg.material_override = VoxelFactory.get_mat(Color(0.08, 0.09, 0.10))
+	# 深色底衬：仍用 unshaded，保证暗场景里也能看清血条轮廓
+	bg.material_override = _hp_bar_mat(Color(0.06, 0.07, 0.09))
 	hp_bar.add_child(bg)
 	hp_fill = MeshInstance3D.new()
 	var fm := BoxMesh.new()
-	fm.size = Vector3(0.56, 0.05, 0.03)
+	fm.size = Vector3(0.56, 0.05, 0.02)
 	hp_fill.mesh = fm
-	hp_fill.material_override = VoxelFactory.get_mat(Color(0.30, 0.90, 0.45), 0.4)
-	hp_fill.position.z = -0.01
+	hp_fill.material_override = _hp_bar_mat(Color(0.30, 0.92, 0.46))
+	# 填充必须位于底衬【朝向相机】的一侧（局部 +Z），否则会被底衬完全遮住显示为黑色
+	hp_fill.position.z = 0.02
 	hp_bar.add_child(hp_fill)
 
 func _physics_process(delta: float) -> void:
@@ -113,14 +133,18 @@ func apply_slow(factor: float, duration: float) -> void:
 	slow_timer = maxf(slow_timer, duration)
 
 func take_damage(amount: float) -> void:
+	# 已死亡敌人不再结算，避免同帧多发子弹/溅射重复触发 died 信号
+	# （重复发信号会重复发放金币与击杀计数）
+	if hp <= 0.0:
+		return
 	hp -= amount
 	_flash_timer = 0.10
 	model.scale = Vector3(1.12, 0.90, 1.12)
 	var ratio := clampf(hp / maxf(max_hp, 0.001), 0.0, 1.0)
 	hp_fill.scale.x = ratio
 	hp_fill.position.x = -(1.0 - ratio) * 0.28
-	hp_fill.material_override = VoxelFactory.get_mat(
-		Color(0.30, 0.90, 0.45) if ratio > 0.4 else Color(0.95, 0.30, 0.20), 0.4)
+	hp_fill.material_override = _hp_bar_mat(
+		Color(0.30, 0.92, 0.46) if ratio > 0.4 else Color(0.95, 0.30, 0.20))
 	if hp <= 0.0:
 		died.emit(self)
 

@@ -22,6 +22,8 @@ var main_ref: Node
 var _spin: float = 0.0
 
 func setup(type: String, slot: int, ref: Node) -> void:
+	# 暂停时冻结索敌/冷却/旋转；根节点 main 为 ALWAYS，子节点需显式声明 PAUSABLE
+	process_mode = Node.PROCESS_MODE_PAUSABLE
 	tower_type = type
 	slot_index = slot
 	main_ref = ref
@@ -67,33 +69,52 @@ func _process(delta: float) -> void:
 	if target == null:
 		return
 	if head:
-		var to := target.global_position - head.global_position
-		var yaw := atan2(-to.x, -to.z)
+		var yaw := _yaw_to(target.global_position)
 		head.rotation.y = lerp_angle(head.rotation.y, yaw, clampf(delta * 9.0, 0.0, 1.0))
 	if cooldown <= 0.0:
 		_fire(target)
 		cooldown = interval / float(DetourConfig.UPGRADE_RATE_MULT[level - 1])
 
+# 统一的水平面朝向计算：模型正面为 -Z，故绕 Y 的 yaw = atan2(-dx, -dz)。
+# 忽略 Y（高度差），确保炮口旋转与子弹飞行都基于同一个 XZ 平面方向。
+func _yaw_to(world_pos: Vector3) -> float:
+	var from := head.global_position if head else global_position
+	var dx := world_pos.x - from.x
+	var dz := world_pos.z - from.z
+	return atan2(-dx, -dz)
+
+# 地图铺在 XZ 平面，Y 是高度。索敌/范围判定一律用 XZ 平面距离，
+# 避免把 3D 球体或 Z 轴当成平面造成误判；半径与数值保持 C.TOWERS 原样。
+func _in_range(e: DetourEnemy) -> bool:
+	var dx := e.global_position.x - global_position.x
+	var dz := e.global_position.z - global_position.z
+	return dx * dx + dz * dz <= range * range
+
 func _find_target() -> DetourEnemy:
 	var best: DetourEnemy = null
 	var best_progress := -1.0
-	for body in detection.get_overlapping_bodies():
-		if body is DetourEnemy and body.hp > 0.0:
-			var e := body as DetourEnemy
-			if e.progress > best_progress:
-				best = e
-				best_progress = e.progress
+	for e in main_ref.enemies:
+		if not is_instance_valid(e) or e.hp <= 0.0:
+			continue
+		if _in_range(e) and e.progress > best_progress:
+			best = e
+			best_progress = e.progress
 	return best
 
 func _fire(target: DetourEnemy) -> void:
 	if tower_type == "tesla":
-		for body in detection.get_overlapping_bodies():
-			if body is DetourEnemy and body.hp > 0.0:
-				var e := body as DetourEnemy
+		# 电磁塔为范围伤害，同样按 XZ 平面判定命中，不依赖 3D 重叠体
+		for e in main_ref.enemies:
+			if is_instance_valid(e) and e.hp > 0.0 and _in_range(e):
 				e.apply_slow(slow, slow_duration)
 				e.take_damage(damage * float(DetourConfig.UPGRADE_DAMAGE_MULT[level - 1]))
 		main_ref.spawn_tesla_effect(global_position, range)
 		return
+	# 开火瞬间把炮口精确对准目标（跳过 lerp 中间态），使炮口节点朝向、
+	# 炮口生成点与子弹速度方向指向同一目标方向
+	if head:
+		head.rotation.y = _yaw_to(target.global_position)
+		head.force_update_transform()
 	var scene := preload("res://scripts/detour_projectile.gd")
 	var origin := global_position + Vector3(0, 0.85, 0)
 	if tower_type == "minigun":
@@ -123,8 +144,10 @@ func upgrade_cost() -> int:
 func upgrade() -> bool:
 	if level >= 3:
 		return false
+	# 先取当前等级的升级费用再加级：加级后 upgrade_cost() 返回的是下一级价格
+	var cost := upgrade_cost()
 	level += 1
-	invested += upgrade_cost()
+	invested += cost
 	model.scale = Vector3.ONE * (1.0 + float(level - 1) * 0.07)
 	if level == 3:
 		var badge := MeshInstance3D.new()
