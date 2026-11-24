@@ -28,6 +28,13 @@ var _hover_rubble: Node3D = null
 var range_ring: MeshInstance3D = null  # 选中炮塔时常驻显示真实射程圈
 var _range_ring_mat: StandardMaterial3D = null
 
+# 建造模式：半透明炮塔预览 + 射程环（只跟随鼠标悬停的合法平台）
+var build_preview: Node3D = null
+var build_preview_ring: MeshInstance3D = null
+var build_preview_mat: StandardMaterial3D = null
+var _preview_type: String = ""
+var _preview_slot: int = -1
+
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	path_manager = PathManager.new()
@@ -55,6 +62,9 @@ func _ready() -> void:
 	_refresh_hud()
 
 func _process(delta: float) -> void:
+	# 预览属于规划反馈：暂停时也跟随鼠标更新，便于暂停状态下规划建造
+	if not game_over:
+		_update_build_preview()
 	if game_over or paused:
 		return
 	_elapsed += delta
@@ -199,29 +209,20 @@ func _on_enemy_reached_core(enemy: DetourEnemy) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if game_over:
 		return
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_RIGHT:
+			_cancel_build_mode()
+			return
+		if event.button_index != MOUSE_BUTTON_LEFT:
+			return
 		ui.hide_menus()
-		var ground := _screen_to_ground(get_viewport().get_mouse_position())
+		var screen := get_viewport().get_mouse_position()
+		var ground := _screen_to_ground(screen)
 		if ground == Vector3.INF:
 			return
-		var tower := _tower_near(ground)
-		if tower != null:
-			var role: String = String(C.TOWERS[tower.tower_type].get("role", ""))
-			ui.show_tower_menu(get_viewport().get_mouse_position(), tower.slot_index,
-				"%s  Lv.%d%s" % [C.TOWERS[tower.tower_type]["name"], tower.level,
-					" · " + role if role != "" else ""],
-				"升级  %d 金" % tower.upgrade_cost() if tower.upgrade_cost() > 0 else "已满级",
-				"出售  +%d 金" % tower.sell_value())
-			return
-		var rubble := _rubble_near(ground)
-		if rubble != null:
-			_try_clear_rubble(rubble)
-			return
-		var slot := _pad_near(ground)
-		if slot >= 0:
-			ui.show_build_menu(get_viewport().get_mouse_position(), slot)
+		_handle_world_click(ground, screen)
 	if event is InputEventKey and event.pressed and not event.echo:
-		# 数字键 1/2/3 与点击底部炮塔卡等价（切换选中高亮）
+		# 数字键 1/2/3 与点击底部炮塔卡等价（进入对应建造模式）
 		if event.keycode == KEY_1:
 			ui.select_build_type("minigun")
 			return
@@ -231,8 +232,150 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.keycode == KEY_3:
 			ui.select_build_type("tesla")
 			return
+		elif event.keycode == KEY_ESCAPE:
+			_cancel_build_mode()
+			ui.hide_menus()
+			return
 		elif event.keycode == KEY_SPACE:
 			ui._on_pause()
+
+# 世界点击路由：建造模式下优先直接建造；未选择时保留原平台弹出菜单。
+func _handle_world_click(ground: Vector3, screen: Vector2) -> void:
+	if game_over:
+		return
+	var build_type := ui.selected_build_type()
+	if build_type != "":
+		var slot := _pad_near(ground)
+		if slot >= 0:
+			# 已建塔平台优先打开升级/出售菜单，并退出建造模式，避免误覆盖原交互
+			if towers.has(slot):
+				_show_toast("平台已被占用 · 已打开升级/出售面板")
+				_show_tower_menu_at(towers[slot], screen)
+				ui.clear_build_selection()
+				_hide_build_preview()
+				return
+			var cost := int(C.TOWERS[build_type]["cost"])
+			if gold < cost:
+				_show_toast("金币不足 · %s 需要 %d 金" % [C.TOWERS[build_type]["name"], cost])
+				return
+			_on_build_choice(build_type, slot)
+			return
+		_show_toast("请选择青蓝色建造平台 · ESC / 右键取消")
+		return
+
+	var tower := _tower_near(ground)
+	if tower != null:
+		_show_tower_menu_at(tower, screen)
+		return
+	var rubble := _rubble_near(ground)
+	if rubble != null:
+		_try_clear_rubble(rubble)
+		return
+	var pad_slot := _pad_near(ground)
+	if pad_slot >= 0:
+		ui.show_build_menu(screen, pad_slot)
+
+func _show_tower_menu_at(tower: DetourTower, screen: Vector2) -> void:
+	var role: String = String(C.TOWERS[tower.tower_type].get("role", ""))
+	ui.show_tower_menu(screen, tower.slot_index,
+		"%s  Lv.%d%s" % [C.TOWERS[tower.tower_type]["name"], tower.level,
+			" · " + role if role != "" else ""],
+		"升级  %d 金" % tower.upgrade_cost() if tower.upgrade_cost() > 0 else "已满级",
+		"出售  +%d 金" % tower.sell_value())
+
+# ------------------------------------------------------------
+# 建造预览：半透明炮塔本体 + 与真实射程一致的半透明环
+# ------------------------------------------------------------
+func _cancel_build_mode() -> void:
+	if ui.selected_build_type() == "":
+		ui.hide_menus()
+		return
+	ui.clear_build_selection()
+	_hide_build_preview()
+	_show_toast("已取消建造")
+
+func _hide_build_preview() -> void:
+	if is_instance_valid(build_preview):
+		build_preview.queue_free()
+	build_preview = null
+	build_preview_ring = null
+	build_preview_mat = null
+	_preview_type = ""
+	_preview_slot = -1
+
+func _rebuild_build_preview(type: String) -> void:
+	_hide_build_preview()
+	var ghost: Node3D
+	match type:
+		"minigun": ghost = DetourModels.build_minigun()
+		"cannon": ghost = DetourModels.build_cannon()
+		"tesla": ghost = DetourModels.build_tesla()
+		_: return
+	ghost.name = "BuildPreview"
+	build_preview_mat = StandardMaterial3D.new()
+	build_preview_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	build_preview_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	build_preview_mat.albedo_color = Color(C.C_CYAN.r, C.C_CYAN.g, C.C_CYAN.b, 0.34)
+	for mi in ghost.find_children("*", "MeshInstance3D", true, false):
+		var mesh: MeshInstance3D = mi as MeshInstance3D
+		mesh.material_override = build_preview_mat
+		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var ring := MeshInstance3D.new()
+	ring.name = "RangeRing"
+	var torus := TorusMesh.new()
+	torus.inner_radius = 0.96
+	torus.outer_radius = 1.0
+	torus.rings = 6
+	torus.ring_segments = 48
+	ring.mesh = torus
+	var rm := StandardMaterial3D.new()
+	rm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	rm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	rm.albedo_color = Color(C.C_CYAN.r, C.C_CYAN.g, C.C_CYAN.b, 0.55)
+	rm.emission_enabled = true
+	rm.emission = C.C_CYAN
+	rm.emission_energy_multiplier = 0.5
+	ring.material_override = rm
+	ring.rotation.x = PI * 0.5
+	ring.position.y = 0.16
+	ghost.add_child(ring)
+	build_preview_ring = ring
+	add_child(ghost)
+	build_preview = ghost
+	_preview_type = type
+
+func _update_build_preview() -> void:
+	var type := ui.selected_build_type()
+	if type == "" or not C.TOWERS.has(type):
+		_hide_build_preview()
+		return
+	var ground := _screen_to_ground(get_viewport().get_mouse_position())
+	if ground == Vector3.INF:
+		_hide_build_preview()
+		return
+	var slot := _pad_near(ground)
+	if slot < 0 or towers.has(slot):
+		_hide_build_preview()
+		return
+	if type != _preview_type:
+		_rebuild_build_preview(type)
+	if not is_instance_valid(build_preview):
+		return
+	var pad: Node3D = world.build_pads[slot]
+	build_preview.visible = true
+	build_preview.global_position = pad.global_position + Vector3(0, 0.14, 0)
+	var cfg: Dictionary = C.TOWERS[type]
+	var affordable := gold >= int(cfg["cost"])
+	var tint: Color = C.C_CYAN if affordable else C.C_RED
+	if build_preview_mat != null:
+		build_preview_mat.albedo_color = Color(tint.r, tint.g, tint.b, 0.34)
+	if is_instance_valid(build_preview_ring):
+		build_preview_ring.scale = Vector3.ONE * float(cfg["range"])
+		var rm := build_preview_ring.material_override as StandardMaterial3D
+		if rm != null:
+			rm.albedo_color = Color(tint.r, tint.g, tint.b, 0.55)
+			rm.emission = tint
+	_preview_slot = slot
 
 func _screen_to_ground(screen: Vector2) -> Vector3:
 	var cam := world.main_camera
@@ -276,7 +419,10 @@ func _rubble_near(pos: Vector3) -> Node3D:
 	return null
 
 func _on_build_choice(type: String, slot: int) -> void:
-	if towers.has(slot) or game_over:
+	if game_over or slot < 0 or slot >= world.build_pads.size() or not C.TOWERS.has(type):
+		return
+	if towers.has(slot):
+		_show_toast("平台已被占用")
 		return
 	var cfg: Dictionary = C.TOWERS[type]
 	var cost := int(cfg["cost"])
@@ -465,6 +611,9 @@ func _show_toast(text: String) -> void:
 func _end_game(victory: bool) -> void:
 	game_over = true
 	wave_active = false
+	ui.build_input_enabled = false
+	ui.clear_build_selection()
+	_hide_build_preview()
 	Engine.time_scale = 1.0
 	get_tree().paused = false
 	ui.show_result(victory, "完成波次 %d / %d  ·  击毁 %d 个敌人  ·  剩余金币 %d"

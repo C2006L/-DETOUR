@@ -124,6 +124,8 @@ var _card_styles := {}
 var _selected_build_type := ""
 var _paused := false
 var _fast := false
+# 结算后关闭建造卡输入，避免残留菜单/点击在结束界面改变选中状态
+var build_input_enabled: bool = true
 
 func _ready() -> void:
 	layer = 10
@@ -406,12 +408,21 @@ func _on_card_input(event: InputEvent, key: String) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		select_build_type(key)
 
-# 数字键 1/2/3 选中炮塔卡，与鼠标点击卡片完全等价（切换高亮）。
-# 建造仍走点击平台后的弹出菜单，选中状态仅作视觉提示，不参与建造决策。
+# 数字键 1/2/3 与鼠标点击卡片完全等价：选中后进入对应炮塔的建造模式。
+# 建造模式下主控会在合法平台上显示半透明预览，并在点击平台时直接建造。
 func select_build_type(key: String) -> void:
-	if not _build_cards.has(key):
+	if not build_input_enabled or not _build_cards.has(key):
 		return
 	_selected_build_type = "" if key == _selected_build_type else key
+	_refresh_build_cards()
+
+func selected_build_type() -> String:
+	return _selected_build_type
+
+func clear_build_selection() -> void:
+	if _selected_build_type == "":
+		return
+	_selected_build_type = ""
 	_refresh_build_cards()
 
 func _refresh_build_cards() -> void:
