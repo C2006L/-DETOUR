@@ -20,6 +20,7 @@ var slow_timer: float = 0.0
 var model: Node3D
 var hp_bar: Node3D
 var hp_fill: MeshInstance3D
+var slow_ring: MeshInstance3D  # 减速指示环：受电磁塔减速时常驻显形，材质独立不共享
 var _leg_base_y: Array[float] = []
 var _anim_time: float = 0.0
 var _flash_timer: float = 0.0
@@ -70,6 +71,7 @@ func setup(type: String, points: Array[Vector3], manager: PathManager) -> void:
 		_leg_base_y.append(leg.position.y if leg else 0.0)
 
 	_build_hp_bar()
+	_build_slow_ring()
 	if path.size() > 0:
 		global_position = path[0]
 
@@ -94,12 +96,39 @@ func _build_hp_bar() -> void:
 	hp_fill.position.z = 0.02
 	hp_bar.add_child(hp_fill)
 
+# 减速指示环：电磁塔命中后显形，玩家可直观看到"这个敌人被减速了"。
+# 用独立材质实例（不经过 VoxelFactory 缓存），避免染色连带影响其他敌人。
+func _build_slow_ring() -> void:
+	slow_ring = MeshInstance3D.new()
+	slow_ring.name = "SlowRing"
+	var torus := TorusMesh.new()
+	torus.inner_radius = 0.34 if enemy_type == "scout" else 0.50
+	torus.outer_radius = 0.40 if enemy_type == "scout" else 0.57
+	torus.rings = 8
+	torus.ring_segments = 20
+	slow_ring.mesh = torus
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.16, 0.85, 0.92)
+	m.emission_enabled = true
+	m.emission = Color(0.16, 0.85, 0.92)
+	m.emission_energy_multiplier = 1.4
+	slow_ring.material_override = m
+	slow_ring.rotation.x = PI * 0.5
+	slow_ring.position.y = 0.04
+	slow_ring.visible = false
+	add_child(slow_ring)
+
 func _physics_process(delta: float) -> void:
 	_anim_time += delta
 	if slow_timer > 0.0:
 		slow_timer -= delta
 		if slow_timer <= 0.0:
 			slow_factor = 1.0
+	# 减速指示环：随减速状态显隐，并缓慢旋转强调"受控"状态
+	if slow_ring:
+		slow_ring.visible = slow_timer > 0.0
+		if slow_ring.visible:
+			slow_ring.rotation.z += delta * 1.8
 	if _flash_timer > 0.0:
 		_flash_timer -= delta
 		if _flash_timer <= 0.0:

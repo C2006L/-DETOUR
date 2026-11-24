@@ -25,6 +25,8 @@ var _kills: int = 0
 var _elapsed: float = 0.0
 var _core_pulse: float = 0.0
 var _hover_rubble: Node3D = null
+var range_ring: MeshInstance3D = null  # 选中炮塔时常驻显示真实射程圈
+var _range_ring_mat: StandardMaterial3D = null
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -71,6 +73,7 @@ func _process(delta: float) -> void:
 
 	_refresh_hud()
 	_update_rubble_hover()
+	_update_range_ring()
 
 # ------------------------------------------------------------
 # 悬停到可拆废墟时高亮警示标记，并在状态栏给出提示（纯视觉，不改数值）
@@ -92,6 +95,39 @@ func _set_rubble_highlight(node: Node3D, on: bool) -> void:
 	var mark := node.get_node_or_null("Mark")
 	if mark:
 		mark.scale = Vector3.ONE * (1.45 if on else 1.0)
+
+# ------------------------------------------------------------
+# 选中炮塔时显示真实射程圈（半透明环）。跟随 ui.selected_tower_slot：
+# 打开炮塔菜单即显示，关闭或出售后自动隐藏。电磁塔借此明确 4.0 格真实范围。
+func _update_range_ring() -> void:
+	var show := ui.tower_menu != null and ui.tower_menu.visible and ui.selected_tower_slot >= 0
+	var tw: DetourTower = null
+	if show:
+		tw = towers.get(ui.selected_tower_slot) as DetourTower
+	if show and is_instance_valid(tw):
+		if range_ring == null:
+			range_ring = MeshInstance3D.new()
+			range_ring.name = "RangeRing"
+			var torus := TorusMesh.new()
+			torus.inner_radius = 0.96
+			torus.outer_radius = 1.0
+			torus.rings = 6
+			torus.ring_segments = 48
+			range_ring.mesh = torus
+			_range_ring_mat = StandardMaterial3D.new()
+			_range_ring_mat.albedo_color = C.C_CYAN
+			_range_ring_mat.emission_enabled = true
+			_range_ring_mat.emission = C.C_CYAN
+			_range_ring_mat.emission_energy_multiplier = 0.9
+			range_ring.material_override = _range_ring_mat
+			range_ring.rotation.x = PI * 0.5
+			add_child(range_ring)
+		range_ring.visible = true
+		range_ring.global_position = tw.global_position + Vector3(0, 0.30, 0)
+		range_ring.scale = Vector3.ONE * tw.range
+	else:
+		if is_instance_valid(range_ring):
+			range_ring.visible = false
 
 # ------------------------------------------------------------
 func _tick_spawns(delta: float) -> void:
@@ -170,8 +206,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		var tower := _tower_near(ground)
 		if tower != null:
+			var role: String = String(C.TOWERS[tower.tower_type].get("role", ""))
 			ui.show_tower_menu(get_viewport().get_mouse_position(), tower.slot_index,
-				"%s  Lv.%d" % [C.TOWERS[tower.tower_type]["name"], tower.level],
+				"%s  Lv.%d%s" % [C.TOWERS[tower.tower_type]["name"], tower.level,
+					" · " + role if role != "" else ""],
 				"升级  %d 金" % tower.upgrade_cost() if tower.upgrade_cost() > 0 else "已满级",
 				"出售  +%d 金" % tower.sell_value())
 			return
@@ -182,8 +220,19 @@ func _unhandled_input(event: InputEvent) -> void:
 		var slot := _pad_near(ground)
 		if slot >= 0:
 			ui.show_build_menu(get_viewport().get_mouse_position(), slot)
-	if event is InputEventKey and event.pressed and event.keycode == KEY_SPACE:
-		ui._on_pause()
+	if event is InputEventKey and event.pressed and not event.echo:
+		# 数字键 1/2/3 与点击底部炮塔卡等价（切换选中高亮）
+		if event.keycode == KEY_1:
+			ui.select_build_type("minigun")
+			return
+		elif event.keycode == KEY_2:
+			ui.select_build_type("cannon")
+			return
+		elif event.keycode == KEY_3:
+			ui.select_build_type("tesla")
+			return
+		elif event.keycode == KEY_SPACE:
+			ui._on_pause()
 
 func _screen_to_ground(screen: Vector2) -> Vector3:
 	var cam := world.main_camera
@@ -246,7 +295,7 @@ func _on_build_choice(type: String, slot: int) -> void:
 	_refresh_hud()
 
 func _on_upgrade_requested(slot: int) -> void:
-	if not towers.has(slot):
+	if game_over or not towers.has(slot):
 		return
 	var tower: DetourTower = towers[slot]
 	var cost := tower.upgrade_cost()
@@ -262,7 +311,7 @@ func _on_upgrade_requested(slot: int) -> void:
 	_refresh_hud()
 
 func _on_sell_requested(slot: int) -> void:
-	if not towers.has(slot):
+	if game_over or not towers.has(slot):
 		return
 	var tower: DetourTower = towers[slot]
 	gold += tower.sell_value()
@@ -272,7 +321,7 @@ func _on_sell_requested(slot: int) -> void:
 	_refresh_hud()
 
 func _try_clear_rubble(node: Node3D) -> void:
-	if not is_instance_valid(node) or node.has_meta("clearing"):
+	if game_over or not is_instance_valid(node) or node.has_meta("clearing"):
 		return
 	node.set_meta("clearing", true)
 	# 立即移出可交互列表：否则 Tween 释放节点后数组残留失效引用，
@@ -372,7 +421,10 @@ func spawn_tesla_effect(pos: Vector3, radius: float) -> void:
 	add_child(mi)
 	mi.global_position = pos + Vector3(0, 0.6, 0)
 	var tw := create_tween()
-	tw.tween_property(mi, "scale", Vector3.ONE * radius * 1.6, 0.30)
+	# 视觉对齐：TorusMesh 外缘半径 = 0.28，放大 radius/0.28 倍后外缘≈radius，
+	# 使开火特效环与电磁塔 4.0 格真实 AOE 判定范围一致（原来只到 1.79 格）
+	var target_scale := radius / 0.28
+	tw.tween_property(mi, "scale", Vector3.ONE * target_scale, 0.30)
 	tw.parallel().tween_property(m, "emission_energy_multiplier", 0.0, 0.30)
 	tw.tween_callback(mi.queue_free)
 
@@ -380,7 +432,9 @@ func spawn_build_effect(pos: Vector3) -> void:
 	_spawn_sparks(pos + Vector3(0, 0.3, 0), C.C_YELLOW, 8, 0.35)
 
 func explode_at(pos: Vector3, radius: float, damage: float) -> void:
-	for e in enemies:
+	# 遍历快照：take_damage 致命时会经 died 信号从 enemies 中移除该敌人，
+	# 直接遍历原数组会跳过紧邻的下一个敌人，导致范围内部分敌人漏伤/漏金币。
+	for e in enemies.duplicate():
 		if is_instance_valid(e) and e.global_position.distance_to(pos) <= radius:
 			e.take_damage(damage)
 	spawn_explosion(pos, true)

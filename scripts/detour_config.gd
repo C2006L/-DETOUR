@@ -36,17 +36,17 @@ const TOWERS := {
 	"minigun": {
 		"name": "机枪塔", "cost": 100, "range": 4.5, "damage": 5.0,
 		"interval": 0.25, "projectile_speed": 24.0, "splash": 0.0, "slow": 0.0,
-		"color": "orange",
+		"color": "orange", "role": "高速单体",
 	},
 	"cannon": {
 		"name": "重炮塔", "cost": 150, "range": 6.0, "damage": 28.0,
 		"interval": 2.0, "projectile_speed": 13.0, "splash": 1.4, "slow": 0.0,
-		"color": "cannon",
+		"color": "cannon", "role": "范围爆炸",
 	},
 	"tesla": {
 		"name": "电磁塔", "cost": 120, "range": 4.0, "damage": 3.0,
 		"interval": 0.8, "projectile_speed": 0.0, "splash": 0.0, "slow": 0.35,
-		"slow_duration": 1.5, "color": "cyan",
+		"slow_duration": 1.5, "color": "cyan", "role": "减速控场",
 	},
 }
 

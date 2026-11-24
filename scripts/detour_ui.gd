@@ -396,17 +396,23 @@ func _make_build_card(key: String, icon_kind: String, name: String, cost: int, h
 	row.add_child(col)
 	card.set_meta("key", key)
 	card.set_meta("desc", desc)
+	# 悬停提示显示定位（如电磁塔"减速控场"），不改变卡片布局与高度
+	card.tooltip_text = "%s · %s" % [name, desc]
 	_build_cards[key] = card
 	card.gui_input.connect(_on_card_input.bind(key))
 	return card
 
 func _on_card_input(event: InputEvent, key: String) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		if key == _selected_build_type:
-			_selected_build_type = ""
-		else:
-			_selected_build_type = key
-		_refresh_build_cards()
+		select_build_type(key)
+
+# 数字键 1/2/3 选中炮塔卡，与鼠标点击卡片完全等价（切换高亮）。
+# 建造仍走点击平台后的弹出菜单，选中状态仅作视觉提示，不参与建造决策。
+func select_build_type(key: String) -> void:
+	if not _build_cards.has(key):
+		return
+	_selected_build_type = "" if key == _selected_build_type else key
+	_refresh_build_cards()
 
 func _refresh_build_cards() -> void:
 	for key in _build_cards:
